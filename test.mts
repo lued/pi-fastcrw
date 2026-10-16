@@ -23,7 +23,7 @@ globalThis.fetch = ((input, init) => {
 const key = "offline-engine-secret-123", llmKey = "offline-llm-secret-456";
 type Obj = Record<string, any>;
 type Hit = { method: string; url: string; headers: IncomingHttpHeaders; text: string; body: Obj };
-type Reply = { code?: number; body?: Obj; headers?: Record<string, string> };
+type Reply = { code?: number; body?: Obj; raw?: string; headers?: Record<string, string> };
 const hits: Hit[] = [], spillDirs = new Set<string>();
 let responder: ((hit: Hit) => Reply | undefined) | undefined;
 const capabilityBody: Obj = { limits: { searchMaxLimit: 2, maxBatchUrls: 2, maxExtractUrls: 2 }, renderers: { available: ["auto", "impersonated-http"] }, documents: { fileUpload: { maxBytes: 4096 } } };
@@ -64,7 +64,7 @@ const server = createServer(async (req, res) => {
       } else reply = { code: 404, body: { error: "mock route not found" } };
     }
     res.writeHead(reply.code ?? 200, { "content-type": "application/json", ...reply.headers });
-    res.end(JSON.stringify(reply.body ?? {}));
+    res.end(reply.raw ?? JSON.stringify(reply.body ?? {}));
   } catch { res.writeHead(500); res.end('{"error":"mock failed"}'); }
 });
 await new Promise<void>(r => server.listen(0, "127.0.0.1", r));
@@ -195,6 +195,8 @@ try {
     });
     await t.test("scrape: query/topK defaults to sentence chunking", async () => {
       await run("scrape", { url: example, query: "test", topK: 2 }); assert.deepEqual(last().body.chunkStrategy, { type: "sentence" }); assert.equal(last().body.topK, 2);
+      assert.equal(last().body.filterMode, "bm25");
+      await run("scrape", { url: example, query: "test", filterMode: "cosine" }); assert.equal(last().body.filterMode, "cosine");
     });
     await t.test("scrape: JSON and summary prompts use native fields", async () => {
       await run("scrape", { url: example, formats: ["json", "summary"], prompt: "title" });
@@ -252,6 +254,7 @@ try {
     await t.test("crawl: active route", async () => { await run("crawl", { action: "active" }); assert.equal(last().url, "/v2/crawl/active"); });
     await t.test("changes: first observation, same, changed, secure baseline and previous mapping", async () => {
       const first = await run("changes", { mode: "url", url: example, tag: "test" }); assert.equal(first.details.firstObservation, true);
+      assert.match(textOf(first), /Status: new · baseline established/);
       const same = await run("changes", { mode: "url", url: example, tag: "test" }); assert.equal(same.details.status, "same"); assert.equal(same.details.firstObservation, false);
       assert.equal(last().body.changeTracking.previous.contentHash, "old"); trackingVersion = "new";
       const changed = await run("changes", { mode: "url", url: example, tag: "test" }); assert.equal(changed.details.status, "changed");
@@ -262,7 +265,9 @@ try {
       const r = await run("changes", { mode: "list" }); assert.equal(r.details.count, 1); assert.doesNotMatch(await readFile(r.details.fullResponse, "utf8"), /contentHash/);
       assert.equal((await run("changes", { mode: "forget", url: example, tag: "test" })).details.count, 1);
       await run("changes", { mode: "url", url: example, tag: "one" }); await run("changes", { mode: "url", url: example, tag: "two" });
-      assert.equal((await run("changes", { mode: "forget", all: true })).details.count, 2); assert.equal((await run("changes", { mode: "list" })).details.count, 0);
+      assert.equal((await run("changes", { mode: "forget", tag: "one" })).details.count, 1); assert.equal((await run("changes", { mode: "list" })).details.count, 1);
+      await assert.rejects(run("changes", { mode: "forget" }), /url and\/or tag, or all:true/);
+      assert.equal((await run("changes", { mode: "forget", all: true })).details.count, 1); assert.equal((await run("changes", { mode: "list" })).details.count, 0);
     });
     await t.test("changes: deterministic diff maps supplied snapshots", async () => {
       const r = await run("changes", { mode: "diff", previous: { markdown: "old" }, current: { markdown: "new" } });
@@ -318,6 +323,13 @@ try {
       await cmd("reset breakers", false); await cmd("reset preferences example.com", true, false);
       assert.ok(!hits.slice(start).some(h => h.url.startsWith("/admin/")));
       assert.ok(session.messages.some(m => JSON.stringify(m).includes("interactive confirmation UI")));
+    });
+    await t.test("metrics: HTML 404 routes are reported briefly as unavailable", async () => {
+      responder = h => h.url.startsWith("/metrics/") ? { code: 404, raw: "<!doctype html><html><body>Not Found " + "x".repeat(800) + "</body></html>", headers: { "content-type": "text/html" } } : undefined;
+      const start = notices.length; await cmd("metrics"); responder = undefined;
+      const text = notices.slice(start).join("\n");
+      assert.match(text, /renderer-breakers: unavailable .*HTTP 404: non-JSON text\/html response \(route not available on this server\)/);
+      assert.match(text, /renderer-preferences: unavailable/); assert.doesNotMatch(text, /<html|xxxx/);
     });
     await t.test("tools: list reports activation and approximate schema token costs", async () => {
       await cmd("tools list"); const text = notices.at(-1)!;

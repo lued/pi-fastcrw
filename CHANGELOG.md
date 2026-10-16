@@ -2,6 +2,7 @@
 
 ## 1.0.0
 
+- Manual-check fixes: query chunks default to `bm25` ranking; `forget` by tag alone; first observation shown as a new baseline; research `references`/`citers` described on `action`/`mode`; `/fastcrw metrics` and other non-JSON errors (e.g. HTML 404 pages) show a short message.
 - Release packaging, MIT license, Node 22.19+ support, reproducible lockfile and Node 22/24 CI.
 - Offline SDK integration tests, including auth/redaction, jobs, snapshots, uploads and rendering.
 - Persisted `/fastcrw tools list|enable|disable` controls and schema-token estimates.

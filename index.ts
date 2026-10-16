@@ -99,7 +99,7 @@ async function request(method: string, path: string, body?: Obj | FormData, sign
     const raw = await response.text();
     let data: Obj;
     try { data = obj(scrub(JSON.parse(raw), secrets)); } catch {
-      throw new Error(`fastCRW HTTP ${response.status}: ${redact(raw, secrets).slice(0, 500) || "empty/non-JSON response"}` +
+      throw new Error(`fastCRW HTTP ${response.status}: ${/^\s*</.test(raw) ? `non-JSON ${response.headers.get("content-type") || "HTML"} response${response.status === 404 ? " (route not available on this server)" : ""}` : redact(raw, secrets).slice(0, 300) || "empty/non-JSON response"}` +
         (response.status === 401 ? "; set CRW_API_KEY for this server." : ""));
     }
     if (!response.ok || data.success === false) {
@@ -224,7 +224,7 @@ function renderResult(kind: string): NonNullable<ToolDefinition["renderResult"]>
     let summary = d.jobId ? `${d.status || "processing"} ${d.completed ?? "?"}/${d.total ?? "?"} · ${d.jobId}` :
       kind === "search" ? `${d.count ?? "?"} results${d.answer ? " · answer" : ""}` :
       kind === "map" ? `${d.count ?? "?"} urls` :
-      kind === "changes" ? `${d.status || `${d.count ?? "?"} snapshots`}${d.firstObservation ? " · first observation" : ""}` :
+      kind === "changes" ? `${d.firstObservation ? "new baseline" : d.status || `${d.count ?? "?"} snapshots`}` :
       kind === "research" ? `${d.count ?? "?"} results` :
       kind === "parse" ? `${d.pages ?? "?"} pages · ${d.bytes ?? "?"} bytes` : `${d.bytes ?? "?"} bytes${d.truncated ? " · truncated" : ""}${image}`;
     if (isPartial || context?.isError) summary = text.split("\n")[0] || (isPartial ? "Working…" : "Failed");
@@ -255,6 +255,8 @@ function validateHeaders(value: unknown) {
 function validateChunk(body: Obj) {
   // The engine ignores query/topK without a chunkStrategy; default to sentence chunking.
   if (!body.chunkStrategy && (body.query !== undefined || body.topK !== undefined)) body.chunkStrategy = { type: "sentence" };
+  // Without filterMode the engine does not rank chunks by query; default to bm25.
+  if (body.query !== undefined && body.filterMode === undefined) body.filterMode = "bm25";
   if (!body.chunkStrategy) return;
   const c = pick(body.chunkStrategy, ["type", "maxChars", "overlapChars", "dedupe", "pattern"]);
   if (c.type === "regex" && !str(c.pattern).trim()) throw new Error("Regex chunkStrategy requires pattern.");
@@ -730,8 +732,8 @@ const changes = defineTool({
     }
     if (p.mode === "forget") {
       if (p.all && (p.url || p.tag !== undefined)) throw new Error("forget all:true cannot include url/tag.");
-      if (!p.all && !p.url) throw new Error("forget requires url+optional tag, or all:true.");
-      const rows = p.all ? await snapshotList() : [{ url: identity(p.url!), tag: p.tag ?? "" }];
+      if (!p.all && !p.url && p.tag === undefined) throw new Error("forget requires url and/or tag, or all:true.");
+      const rows = p.all ? await snapshotList() : p.url ? [{ url: identity(p.url), tag: p.tag ?? "" }] : await snapshotList(undefined, p.tag);
       let count = 0;
       for (const r of rows) await withSnapshot(str(r.url), str(r.tag), async path => {
         try { await unlink(path); count++; } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
@@ -758,7 +760,7 @@ const changes = defineTool({
       advanced: { ...pick(a, advancedKeys), changeTracking: cleanTracking(p), goal: p.goal, judgeEnabled: p.judgeEnabled } });
     body.url = url;
     const t = await trackedScrape(body, signal);
-    return output(`Changes: url · ${url}\nStatus: ${t.status}${t.first ? " · baseline established (first observation)" : ""}\n` +
+    return output(`Changes: url · ${url}\nStatus: ${t.first ? "new · baseline established (first observation; engine reports changed)" : t.status}\n` +
       `${wrap(url, json(pick(t.result, ["diff", "judgment", "warnings"])))}\nSnapshot: ${t.path}${warningText(t.raw)}`, t.raw,
       { status: t.status, firstObservation: t.first, persisted: true });
   },
@@ -813,8 +815,8 @@ const parse = defineTool({
 const research = defineTool({
   ...common, renderResult: renderResult("research"), name: "fastcrw_research", label: "fastCRW Research", description: "Retrieve papers, abstract passages, similar/citing/referenced papers, or GitHub README hits. Not full-paper reading; no LLM required.",
   promptSnippet: "Retrieve scholarly papers and research README hits",
-  parameters: Type.Object({ action: StringEnum(["papers", "paper", "similar", "github"]), query: O(S("Search query; paper passage query optional")), id: O(S("Paper id, encoded as one path segment")),
-    intent: O(S("Required for similar; engine does not rerank by intent")), mode: O(StringEnum(["similar", "citers", "references"])),
+  parameters: Type.Object({ action: StringEnum(["papers", "paper", "similar", "github"], { description: "papers: search; paper: one paper (+ abstract passages with query); similar: related papers, or references/citers via mode; github: README search" }), query: O(S("Search query; paper passage query optional")), id: O(S("Paper id, encoded as one path segment")),
+    intent: O(S("Required for similar; engine does not rerank by intent")), mode: O(StringEnum(["similar", "citers", "references"], { description: "With action similar: similar papers (default), papers citing it, or papers it references" })),
     k: O(Type.Integer({ minimum: 1, description: "Clamped to 1..100; paper passages 1..20" })),
     authors: O(S("Author substring")), categories: O(S("Category filter")), from: O(S("Start date")), to: O(S("End date")),
   }, closed),
@@ -906,7 +908,9 @@ export default function (pi: ExtensionAPI) {
         if (sub === "snapshots") { const rows = await snapshotList(); await show(`Snapshots: ${rows.length}\n${wrap("", json(rows))}`); return; }
         if (sub === "metrics") {
           for (const path of ["/metrics/renderer-breakers", "/metrics/renderer-preferences"]) {
-            const raw = await request("GET", path, undefined, undefined, 10_000);
+            let raw: Obj;
+            try { raw = await request("GET", path, undefined, undefined, 10_000); }
+            catch (e) { await show(`${path}: unavailable — ${(e as Error).message}`); continue; }
             const data = obj(raw.data ?? raw);
             const summary = path.endsWith("breakers") ? { global: data.global, perHostCount: list(data.per_host).length,
               perHostSample: list(data.per_host).slice(0, 5) } : { config: data.config, size: data.size,
