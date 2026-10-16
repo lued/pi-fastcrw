@@ -30,7 +30,7 @@ async function run(name: string, args: Record<string, unknown>, expect: (r: R, t
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const tool = tools.find(t => t.name === name)!;
-      const validated = validateToolArguments(tool, { id: "smoke", name, type: "toolCall", arguments: args });
+      const validated = validateToolArguments(tool, { id: "smoke", name, type: "toolCall", arguments: args as never });
       const r = await tool.execute("smoke", validated as never, undefined, u => updates.push(u)) as R;
       last = r;
       const text = textOf(r), v = expect(r, text);
@@ -54,6 +54,31 @@ async function throws(label: string, fn: () => Promise<unknown> | unknown, re: R
 const has = (s: string) => (_: R, t: string) => t.includes(s) || `missing "${s}"`;
 const schema = { type: "object", properties: { title: { type: "string" } }, required: ["title"] };
 const example = "https://example.com", wiki = "https://en.wikipedia.org/wiki/Hello_World";
+// Opt-in, one crawl only: npm run smoke -- --abort-only
+if (process.argv.includes("--abort-only")) {
+  const tool = tools.find(t => t.name === "fastcrw_crawl")!, controller = new AbortController();
+  let jobId = "", rejected = false;
+  const timer = setTimeout(() => controller.abort(), 1200), started = Date.now();
+  try {
+    await tool.execute("abort-smoke", { action: "start", url: "https://en.wikipedia.org/wiki/Web_crawler", maxPages: 40, maxDepth: 2, wait: true } as never,
+      controller.signal, r => { jobId = (r.details as { jobId?: string })?.jobId || jobId; });
+  } catch (error) { rejected = /aborted/i.test((error as Error).message); }
+  finally { clearTimeout(timer); }
+  check("live abort rejects after ~1.2 s", rejected && !!jobId, `jobId=${jobId || "not accepted"}, ${Date.now() - started} ms`);
+  if (jobId) {
+    let status = "";
+    for (let i = 0; i < 6; i++) {
+      const r = await tool.execute("abort-status", { action: "status", jobId } as never) as R;
+      status = r.details?.status;
+      if (["cancelled", "canceled"].includes(status)) break;
+      await sleep(500);
+    }
+    check("live abort follow-up status is cancelled", ["cancelled", "canceled"].includes(status), `jobId=${jobId}, status=${status}`);
+  }
+  session.dispose();
+  console.log(`\n${pass} passed, ${fail} failed, ${server} server-side errors (abort-only)`);
+  process.exit(fail ? 1 : 0);
+}
 try {
   await run("fastcrw_search", { query: "pi coding agent site:pi.dev", limit: 2 }, has("1. "), "basic");
   await run("fastcrw_search", { query: "pi coding agent", limit: 2, answer: true }, has("Answer:"), "answer+citations (implicit scrapeOptions)");

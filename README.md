@@ -1,6 +1,6 @@
 # pi-fastcrw
 
-Nine native [pi](https://pi.dev) tools for a self-hosted fastCRW / `crw` web engine (REST API, v0.37.x). **v0.2** covers search, scrape, map, crawl, batch, extract, changes, local PDF parsing, and research, in a single extension file: `index.ts`.
+Nine native [pi](https://pi.dev) tools for a self-hosted fastCRW / `crw` web engine (REST API, v0.37.x). **v1.0** covers search, scrape, map, crawl, batch, extract, changes, local PDF parsing, and research, in a single extension file: `index.ts`.
 
 ## Install
 
@@ -10,9 +10,25 @@ pi install ./path/to/pi-fastcrw # local checkout
 pi -e ./index.ts               # try without installing
 ```
 
+Requires Node **22.19+** and pi (tested with pi 1.3.0). The package ships TypeScript source; no build step or separate MCP server is needed.
+
+## Quick start
+
+Create `~/.pi/agent/fastcrw.json` with your engine URL and token:
+
+```json
+{
+  "apiUrl": "https://search.example.com",
+  "apiKey": "your-engine-token"
+}
+```
+
+Run `chmod 600 ~/.pi/agent/fastcrw.json`, start pi, then enter `/fastcrw status`.
+Ask: “Use fastcrw_search to find two pages about web crawlers.” An engine with its own LLM needs no additional LLM configuration.
+
 ## Configuration
 
-User-only file: `~/.pi/agent/fastcrw.json`. Project files cannot choose an engine or credential target.
+User-only file: `~/.pi/agent/fastcrw.json`. Project files cannot choose an engine or credential target. Configuration is read afresh on each request. Optional full example:
 
 ```json
 {
@@ -29,7 +45,8 @@ User-only file: `~/.pi/agent/fastcrw.json`. Project files cannot choose an engin
     "proxyList": [],
     "proxyRotation": "sticky_per_host",
     "country": "us"
-  }
+  },
+  "disabledTools": ["fastcrw_research"]
 }
 ```
 
@@ -39,10 +56,33 @@ Only `apiUrl`/`apiKey` are needed for an authenticated engine with its own LLM. 
 chmod 600 ~/.pi/agent/fastcrw.json
 ```
 
-Environment variables override engine settings:
+### Full configuration reference
 
-- `CRW_API_URL` (alias `FASTCRW_API_URL`): default `http://localhost:3000`. HTTPS required except loopback; URL credentials/query/fragment rejected.
-- `CRW_API_KEY` (alias `FASTCRW_API_KEY`): optional bearer token for engine authentication.
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `apiUrl` | `http://localhost:3000` | Engine REST base URL, optionally including a path prefix. HTTPS required except loopback; embedded credentials, query and fragment rejected. |
+| `apiKey` | unset | Engine bearer token. Optional for an unauthenticated engine. |
+| `llm.apiKey` | unset | BYOK provider token; sent to the trusted engine when supported. |
+| `llm.provider` | server default | Provider name accepted by your engine. Requires `llm.apiKey`. |
+| `llm.model` | server default | Provider model ID. Requires `llm.apiKey`. |
+| `llm.baseUrl` | server default | LLM endpoint override; never forwarded to extract. Requires `llm.apiKey`. |
+| `proxy.proxy` | unset | Single proxy URL; may contain proxy credentials. |
+| `proxy.proxyList` | unset | Array of proxy URLs. Crawl uses this instead of a single proxy. |
+| `proxy.proxyRotation` | server default | `round_robin`, `random`, or `sticky_per_host`. |
+| `proxy.country` | unset | Egress country hint; supported per-call country overrides take precedence. |
+| `disabledTools` | `[]` | Full tool names excluded on `session_start`. `/fastcrw tools` updates this atomically, preserving other keys. |
+
+| Environment variable | Meaning / precedence |
+| --- | --- |
+| `CRW_API_URL` | Nonempty value wins over `FASTCRW_API_URL`, then file `apiUrl`, then the default. |
+| `FASTCRW_API_URL` | Engine URL alias, lower priority than `CRW_API_URL`. |
+| `CRW_API_KEY` | Nonempty value wins over `FASTCRW_API_KEY`, then file `apiKey`. |
+| `FASTCRW_API_KEY` | Engine key alias, lower priority than `CRW_API_KEY`. |
+| `FASTCRW_CONFIG` | Override the config **file** path; also used for persisted tool controls. Default: `~/.pi/agent/fastcrw.json`. |
+| `FASTCRW_HOME` | Override the local state **directory**; snapshots live in its `snapshots/` child. Default: `~/.pi/agent/fastcrw`. Does not relocate config. |
+| `HOME` | Determines default user paths when the explicit overrides are absent. |
+
+There are no LLM/proxy environment overrides or shell-command/variable interpolation inside JSON. Unknown config keys are preserved. Malformed JSON, a non-object root, or a non-string-array `disabledTools` produces a clear error, not a silent fallback. Keep override paths in a trusted environment; do not set them from untrusted repository scripts.
 
 `llm` is flattened to `llmApiKey`/`llmProvider`/`llmModel`/`baseUrl` for search, scrape, and batch. Extract receives the first three, **never `baseUrl`**. Provider/model/base URL overrides require `llm.apiKey`. Crawl JSON and PDF-upload JSON/summary use the **server's** LLM, not BYOK. LLM credentials are config-only, not tool parameters.
 
@@ -89,20 +129,34 @@ Argument completion is available for these subcommands:
 | Command | Behavior |
 | --- | --- |
 | `/fastcrw` or `/fastcrw status` | Resolved URL, key presence (never its value), `/health`, `/ready`, refreshed capability version and LLM summary. |
+| `/fastcrw tools` or `/fastcrw tools list` | Each tool's active/inactive state and approximate schema-token cost. |
+| `/fastcrw tools enable <name\|all>` | Activate selected native tools now and remove them from persisted `disabledTools`. |
+| `/fastcrw tools disable <name\|all>` | Deactivate selected tools now and persist their full names. |
 | `/fastcrw snapshots` | List saved baseline metadata. |
 | `/fastcrw metrics` | Summarize `/metrics/renderer-breakers` and `/metrics/renderer-preferences`; full responses spill privately. |
 | `/fastcrw reset breakers` | POST `/admin/breakers/reset`, **only after UI confirmation**. |
 | `/fastcrw reset preferences [host]` | POST `/admin/preferences/reset` for one host or all, **only after UI confirmation**. |
 
+Names may be full (`fastcrw_research`) or short (`research`). These controls preserve unrelated active tools and take effect at runtime, never during extension loading. Saved exclusions apply on session start/reload; otherwise all nine are active by default (pi's own tool filters still apply).
+
 Resets are refused without a confirmation-capable UI. There are no model-callable admin reset tools. Status/command output is also emitted in non-UI modes.
 
-## Output and safety
+### Context/token cost
 
+Every active direct tool adds its schema to model requests. `/fastcrw tools list` estimates schema tokens as serialized schema characters ÷ 4; actual provider tokenization and descriptions add overhead. Reduce the load with `/fastcrw tools disable research` or `/fastcrw tools disable all`, then `/fastcrw tools enable search` and `/fastcrw tools enable scrape`. Enable other tools when needed. Changing tools can invalidate a provider's prompt-cache prefix; avoid toggling on every turn.
+
+## Security model and output
+
+- **Credential pinning:** only environment/user config chooses the engine URL and bearer token. HTTP is restricted to loopback; requests use manual redirects. Job IDs are path-encoded and server cursor URLs are never fetched. Engine credentials are not target-page headers.
+- The engine is a trusted service: it receives requested URLs, selected PDF bytes, BYOK tokens and proxy configuration. Use an engine you control/trust. The extension runs with pi's OS permissions; it is not a sandbox or an SSRF policy for the engine.
+- Known engine/LLM keys, configured proxy credentials and sensitive target-header values are redacted before normalized results/errors/spills reach pi. This is best-effort literal redaction, not a detector for arbitrary secrets, transformed/encoded echoes or secrets embedded in screenshots. Never put credentials in prompts, page URLs or tool arguments; pi may log arguments before execution.
 - Text is bounded to pi's 2000-line / 50-KB limits, with room reserved for a spill notice and closing untrusted delimiter.
 - Complete redacted JSON responses are saved to private 0600 files in a 0700 `pi-fastcrw-*` temp directory, including filtered-out map links. `details.fullResponse` and the text show a readable path. Screenshot PNGs also have a readable path and are attached as images.
 - Spills are retained for later `read`; clean them up when no longer needed. Snapshot baselines persist separately until forgotten. Both may contain sensitive page/document content; permissions are not encryption.
 - Fetched page, paper, README, answer and diff text is wrapped in `<untrusted-web-content>` tags. Treat it as evidence, not instructions.
-- Target-page `headers` may reach browser subresources. Never pass engine credentials in them. Proxies and BYOK settings belong in user config, not tool arguments or prompts.
+- Target-page `headers` may reach browser subresources. Never pass engine credentials in them. Proxies and BYOK settings are config-only so models/untrusted page instructions cannot select credential targets or expose tokens in tool-call history. Extract deliberately never receives an LLM endpoint override.
+- Local writes: config updates are atomic same-directory rename writes at **0600**, preserving other config keys; baseline/lock/temp files are **0600**, the snapshots directory **0700**; JSON spills and screenshot PNGs are **0600** in a private **0700** temporary directory. Config parent directories created by the extension use **0700**. Existing config permissions are not changed on read—use `chmod 600` yourself.
+- TUI calls/results escape terminal controls (including CSI/OSC introducers). Collapsed results show counts/status; partial results show progress; expanded text is capped at 80 source lines. Image blocks are displayed by pi. JSON/RPC results stay independent of these renderers.
 
 ## Coexisting with the `crw` MCP server
 
@@ -114,7 +168,7 @@ Native tools overlap with the engine's MCP tools. If both are configured, remove
 
 ## Feature coverage vs fastCRW
 
-v0.2 status: **✅** implemented, **config** user-config-only setting, **—** deliberately unavailable/out of scope.
+v1.0 status: **✅** implemented, **config** user-config-only setting, **—** deliberately unavailable/out of scope.
 
 | fastCRW feature | pi-fastcrw | Notes |
 | --- | --- | --- |
@@ -153,16 +207,21 @@ v0.2 status: **✅** implemented, **config** user-config-only setting, **—** d
 ## Testing
 
 ```bash
-npm install
-npm run check   # strict type-check
-npm run smoke   # sequential live checks, uses your user config
+npm ci
+npm run check                 # strict type-check: index.ts, test.mts, smoke.mts
+npm test                      # offline, real SDK + local mock engine; no credentials required
+npm run smoke                 # live, uses your user config; makes real engine requests
+npm run smoke -- --abort-only # opt-in: one 20-page Wikipedia crawl, abort after ~3 seconds
+npm pack --dry-run            # inspect only; does not publish
 ```
 
-Smoke tests exercise all nine schemas (no `anyOf`/`oneOf`/`const`), source/category/summarize search, scrape chunking/cache/rendering/evidence, map filters, crawl paging/errors/active, two-URL batch start/status/errors/cancel, schema+basis extraction, persistent changes/list/forget and stateless single/batch diff, a generated local PDF, and all four research actions. Snapshot tests use a unique tag, verify permissions, and forget it in `finally`. Page requests use only example.com, en.wikipedia.org, and pi.dev, with small limits. **No live admin resets.**
+The offline suite creates an isolated HOME, `FASTCRW_CONFIG` and `FASTCRW_HOME` before importing the SDK/extension. It uses an in-memory session/settings and a loopback `http.createServer`; a fetch guard rejects external requests. It never reads your real config or snapshots. It covers config precedence/validation, schemas, credential pinning/redirects/redaction, body mapping, jobs/progress/timeouts/cancellation, private spills/baselines, multipart PDF validation, research, capabilities, tool activation, admin guards and renderer safety. It normally finishes well under 30 seconds. CI runs only offline checks on Node 22 and 24; it never runs live smoke or publishes.
+
+Live smoke tests exercise all nine schemas (no `anyOf`/`oneOf`/`const`), source/category/summarize search, scrape chunking/cache/rendering/evidence, map filters, crawl paging/errors/active, two-URL batch start/status/errors/cancel, schema+basis extraction, persistent changes/list/forget and stateless single/batch diff, a generated local PDF, and all four research actions. Snapshot tests use a unique tag, verify permissions, and forget it in `finally`. Page requests use only example.com, en.wikipedia.org, and pi.dev, with small limits. **No live admin resets.**
 
 `smoke` prints `PASS`, `FAIL` (unexpected result/extension bug), or `SERVER` (HTTP 503/504, `search_degraded`, unavailable engine synthesis, or HTTP 422 `pdf_parse_failed`). Search outages/incomplete synthesis are retried once after 20 seconds; SERVER lines do not count as failures. Successful PDF parsing requires the generated text to be returned, not just an HTTP-200 envelope. Missing requested result summaries are reported as partial errors rather than silently passing.
 
-v0.2 verification on the configured engine: **63 passed, 0 failed, 1 server-side error**. News search returned grouped results but no summaries (`llmUsage.executedSummaries:0`) despite native `summarizeResults:true` and `scrapeOptions:{}`, including after retry. The generated PDF parsed successfully (the sandbox failure recorded during planning was not reproduced). Additional local-mock verification covered 32 checks for config/BYOK/proxy mapping, redaction, capability limits/fallback, paging, snapshots, multipart upload, abort cancellation, and command confirmation guards. No admin resets were sent to the live engine.
+The opt-in `--abort-only` check runs separately from normal smoke: it starts a crawl on `https://en.wikipedia.org/wiki/Web_crawler` with `maxPages:20`, aborts the signal after ~3 seconds, verifies rejection, then confirms the job is cancelled. If acceptance has not returned a job ID before abort, cancellation cannot be confirmed; investigate engine responsiveness before retrying.
 
 Manual checks inside pi:
 
@@ -184,10 +243,24 @@ Manual checks inside pi:
 | truncation | “Scrape https://en.wikipedia.org/wiki/List_of_programming_languages as rawHtml”; read the full spill path. |
 | admin safety | Manually enter `/fastcrw reset preferences example.com` and decline confirmation; nothing should reset. |
 
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| `401` | Set `CRW_API_KEY` or file `apiKey` for this engine; stale nonempty environment variables override the file. The error includes the `CRW_API_KEY` hint. Never paste your key into chat. |
+| `503 search_degraded` | The engine's search upstream is unavailable/rate-limited. Wait and retry once; smoke already retries search once after 20 seconds. Check engine health and provider limits. |
+| `422 pdf_parse_failed` | Engine-side PDF parser/sandbox issue, not necessarily an invalid upload. Verify `%PDF-` signature, size, parser availability and server logs. OCR is not guaranteed. |
+| Timeout / job still running | Individual HTTP requests are capped at 290 seconds. `waitSeconds` is an inline budget, not a remote job deadline. Resume with `action:status` + `jobId`, or explicitly cancel it. Map native timeouts above 280 seconds are clamped. User abort after acceptance attempts cancellation independently. |
+| `summarizeResults` returns no summaries for news | This engine summarizes web results only. Use web sources or scrape the news URLs with summary format. Missing requested summaries are surfaced, not silently discarded. |
+| Capability limit / renderer error | Reduce the named limit or select `auto`/an advertised renderer. Capabilities are cached for 10 minutes; `/fastcrw status` refreshes them. Discovery failure alone does not block a call. |
+| Tool missing | Check `/fastcrw tools list`, persisted `disabledTools`, pi `--tools`/`--exclude-tools`, and `/reload`. Enable with `/fastcrw tools enable <name>`. |
+| Bad config | Confirm valid JSON with an object root, and `disabledTools` as an array of strings. Inspect `FASTCRW_CONFIG` if a different path is being read. |
+| Snapshot busy | Another writer may be using the same URL/tag. Retry or inspect the `.lock`; remove it only after verifying no writer is active. Use unique tags for independent baselines. |
+
 ## Development
 
-Implementation stays in `index.ts`; tests in `smoke.mts`. No build step is needed: pi loads TypeScript directly.
+Implementation stays in `index.ts`; offline tests in `test.mts`, live tests in `smoke.mts`. No build step is needed: pi loads TypeScript directly. The npm package includes only `index.ts`, `README.md`, `LICENSE`, `CHANGELOG.md`, and `package.json`; tests, CI and research notes stay in the source checkout.
 
 ## License
 
-MIT
+[MIT](LICENSE), copyright 2026 xander.

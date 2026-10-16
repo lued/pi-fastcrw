@@ -1,15 +1,20 @@
 {
   "name": "pi-fastcrw",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "type": "module",
   "license": "MIT",
   "description": "Nine native pi tools for fastCRW search, scraping, jobs, changes, PDF parsing and research",
-  "keywords": ["pi-package", "pi", "pi-extension", "fastcrw", "web-scraping"],
+  "keywords": ["pi-package", "pi", "pi-extension", "fastcrw", "web-scraping", "web-search", "research"],
+  "author": "xander",
+  "repository": { "type": "git", "url": "git+https://github.com/lued/pi-fastcrw.git" },
+  "homepage": "https://github.com/lued/pi-fastcrw#readme",
+  "bugs": { "url": "https://github.com/lued/pi-fastcrw/issues" },
   "pi": { "extensions": ["./index.ts"] },
-  "files": ["index.ts", "README.md"],
-  "engines": { "node": ">=22" },
+  "files": ["index.ts", "README.md", "LICENSE", "CHANGELOG.md"],
+  "engines": { "node": ">=22.19" },
   "scripts": {
-    "check": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext index.ts",
+    "check": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext index.ts test.mts smoke.mts",
+    "test": "node --test test.mts",
     "smoke": "node smoke.mts"
   },
   "peerDependencies": {
