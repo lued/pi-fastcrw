@@ -1,9 +1,9 @@
 {
   "name": "pi-fastcrw",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "license": "MIT",
-  "description": "Nine native pi tools for fastCRW search, scraping, jobs, changes, PDF parsing and research",
+  "description": "Native pi tools for fastCRW search, scraping, jobs, changes, PDF parsing, research and optional hosted monitors",
   "keywords": ["pi-package", "pi", "pi-extension", "fastcrw", "web-scraping", "web-search", "research"],
   "author": "xander",
   "repository": { "type": "git", "url": "git+https://github.com/lued/pi-fastcrw.git" },

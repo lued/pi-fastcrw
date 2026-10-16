@@ -9,7 +9,7 @@ import { validateToolArguments } from "@earendil-works/pi-ai";
 const rl = new DefaultResourceLoader({ cwd: process.cwd(), agentDir: getAgentDir(), noExtensions: true, additionalExtensionPaths: ["./index.ts"] });
 await rl.reload();
 const names = ["fastcrw_search", "fastcrw_scrape", "fastcrw_map", "fastcrw_crawl", "fastcrw_batch", "fastcrw_extract", "fastcrw_changes", "fastcrw_parse", "fastcrw_research"];
-const { session, extensionsResult } = await createAgentSession({ resourceLoader: rl, sessionManager: SessionManager.inMemory(), tools: names });
+const { session, extensionsResult } = await createAgentSession({ resourceLoader: rl, sessionManager: SessionManager.inMemory(), tools: [...names, "fastcrw_monitor"] });
 const tools = session.agent.state.tools;
 let pass = 0, fail = 0, server = 0;
 const upstream = (note: string) => /HTTP (503|504)|search_degraded|HTTP 422:.*pdf_parse_failed|(?:answer|summary) synthesis unavailable|could not answer/i.test(note);
@@ -21,6 +21,11 @@ const check = (name: string, ok: boolean, note = "") => {
 check("extension loads", extensionsResult.errors.length === 0, extensionsResult.errors.map(e => e.error).join("; "));
 check("all 9 tools registered", names.every(n => tools.some(t => t.name === n)));
 for (const name of names) check(`${name} schema no anyOf/oneOf/const`, !/"(anyOf|oneOf|const)"\s*:/.test(JSON.stringify(tools.find(t => t.name === name)?.parameters)));
+// The hosted monitor tool exists only when a control-plane key is configured (never printed).
+let fileMonitorKey = false;
+try { fileMonitorKey = Boolean(JSON.parse(await readFile(process.env.FASTCRW_CONFIG || join(getAgentDir(), "fastcrw.json"), "utf8"))?.monitor?.apiKey); } catch { /* No config file. */ }
+const monitorConfigured = Boolean(process.env.FASTCRW_MONITOR_API_KEY) || fileMonitorKey;
+check(`fastcrw_monitor ${monitorConfigured ? "registered (monitor configured)" : "absent (monitor not configured)"}`, tools.some(t => t.name === "fastcrw_monitor") === monitorConfigured);
 
 type R = { content: Array<{ type: string; text?: string; data?: string }>; details?: any; isError?: boolean };
 const textOf = (r: R) => r.content.filter(c => c.type === "text").map(c => c.text).join("\n");
@@ -77,6 +82,22 @@ if (process.argv.includes("--abort-only")) {
   }
   session.dispose();
   console.log(`\n${pass} passed, ${fail} failed, ${server} server-side errors (abort-only)`);
+  process.exit(fail ? 1 : 0);
+}
+// Opt-in, hosted control plane, read-only actions only (no create/update/delete/run): npm run smoke -- --monitor
+if (process.argv.includes("--monitor")) {
+  if (!monitorConfigured) console.log("SKIP  fastcrw_monitor: no monitor.apiKey / FASTCRW_MONITOR_API_KEY configured");
+  else {
+    await run("fastcrw_monitor", { action: "balance" }, has("Hosted monitor balance"), "balance");
+    const listed = await run("fastcrw_monitor", { action: "list" }, has("Hosted monitor list"), "list");
+    const first = listed?.details?.fullResponse ? JSON.parse(await readFile(listed.details.fullResponse, "utf8"))?.data?.[0]?.id : undefined;
+    if (typeof first === "string") {
+      await run("fastcrw_monitor", { action: "get", id: first }, has("Hosted monitor get"), "get first monitor");
+      await run("fastcrw_monitor", { action: "checks", id: first }, has("Hosted monitor checks"), "checks first monitor");
+    } else console.log("SKIP  fastcrw_monitor get/checks: no monitors listed (none are created by smoke)");
+  }
+  session.dispose();
+  console.log(`\n${pass} passed, ${fail} failed, ${server} server-side errors (monitor-only)`);
   process.exit(fail ? 1 : 0);
 }
 try {

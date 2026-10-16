@@ -1,6 +1,6 @@
 # pi-fastcrw
 
-Nine native [pi](https://pi.dev) tools for a self-hosted fastCRW / `crw` web engine (REST API, v0.37.x). **v1.0** covers search, scrape, map, crawl, batch, extract, changes, local PDF parsing, and research, in a single extension file: `index.ts`.
+Nine native [pi](https://pi.dev) tools for a self-hosted fastCRW / `crw` web engine (REST API, v0.37.x), plus an optional tenth for hosted monitors. They cover search, scrape, map, crawl, batch, extract, changes, local PDF parsing, and research. **v1.1** adds `fastcrw_monitor` for the hosted fastcrw.com control plane; it is registered only when you configure it ([Hosted monitors](#hosted-monitors-fastcrw_monitor)). Everything lives in a single extension file: `index.ts`.
 
 ## Install
 
@@ -50,6 +50,8 @@ User-only file: `~/.pi/agent/fastcrw.json`. Project files cannot choose an engin
 }
 ```
 
+Add `"monitor": { "apiKey": "your-fastcrw.com-key" }` only if you use hosted monitors ([Hosted monitors](#hosted-monitors-fastcrw_monitor)).
+
 Only `apiUrl`/`apiKey` are needed for an authenticated engine with its own LLM. Omit `llm` and `proxy` unless you want overrides. Restrict this file to your user:
 
 ```bash
@@ -70,6 +72,8 @@ chmod 600 ~/.pi/agent/fastcrw.json
 | `proxy.proxyList` | unset | Array of proxy URLs. Crawl uses this instead of a single proxy. |
 | `proxy.proxyRotation` | server default | `round_robin`, `random`, or `sticky_per_host`. |
 | `proxy.country` | unset | Egress country hint; supported per-call country overrides take precedence. |
+| `monitor.apiKey` | unset | Hosted control-plane bearer key. **`fastcrw_monitor` is registered only when this (or `FASTCRW_MONITOR_API_KEY`) is set.** Never inferred from `apiKey`. |
+| `monitor.url` | `https://fastcrw.com/api` when a monitor key is set | Control-plane base URL, path kept (`/api` + `/v1/monitor`). Same HTTPS/loopback rule as `apiUrl`. A URL without a key does not register the tool. |
 | `disabledTools` | `[]` | Full tool names excluded on `session_start`. `/fastcrw tools` updates this atomically, preserving other keys. |
 
 | Environment variable | Meaning / precedence |
@@ -78,6 +82,8 @@ chmod 600 ~/.pi/agent/fastcrw.json
 | `FASTCRW_API_URL` | Engine URL alias, lower priority than `CRW_API_URL`. |
 | `CRW_API_KEY` | Nonempty value wins over `FASTCRW_API_KEY`, then file `apiKey`. |
 | `FASTCRW_API_KEY` | Engine key alias, lower priority than `CRW_API_KEY`. |
+| `FASTCRW_MONITOR_API_KEY` | Nonempty value wins over file `monitor.apiKey`. Registration is checked when the extension loads, so `/reload` after adding or removing it. |
+| `FASTCRW_MONITOR_URL` | Nonempty value wins over file `monitor.url`, then the default. |
 | `FASTCRW_CONFIG` | Override the config **file** path; also used for persisted tool controls. Default: `~/.pi/agent/fastcrw.json`. |
 | `FASTCRW_HOME` | Override the local state **directory**; snapshots live in its `snapshots/` child. Default: `~/.pi/agent/fastcrw`. Does not relocate config. |
 | `HOME` | Determines default user paths when the explicit overrides are absent. |
@@ -92,7 +98,7 @@ The engine token is sent only to the configured origin; redirects and returned j
 
 ## Tools
 
-All nine tools are direct and active by default. Common intent-level fields are top-level; uncommon knobs live in one optional, closed `advanced` object. Only explicit allowlisted fields are flattened onto native request bodies.
+The nine engine tools are direct and active by default. `fastcrw_monitor` is direct and active only when a monitor key is configured; otherwise it does not exist. Common intent-level fields are top-level; uncommon knobs live in one optional, closed `advanced` object. Only explicit allowlisted fields are flattened onto native request bodies.
 
 | Name | What it does | Engine route |
 | --- | --- | --- |
@@ -105,6 +111,7 @@ All nine tools are direct and active by default. Common intent-level fields are 
 | `fastcrw_changes` | `mode: url \| diff \| list \| forget`; saved URL baselines or supplied-content diffs. | scrape + `/v1/change-tracking/diff`; local store |
 | `fastcrw_parse` | Upload an explicitly selected local PDF as binary multipart. | `POST /v2/parse` |
 | `fastcrw_research` | `papers \| paper \| similar \| github`; scholarly retrieval and README hits. | `GET /v1/search/research/*` |
+| `fastcrw_monitor` | Hosted only, conditional: `create \| list \| get \| update \| delete \| run \| checks \| check \| balance`. | control plane `/v1/monitor*`, `/v1/account/balance` |
 
 ### Parameters and important semantics
 
@@ -128,7 +135,7 @@ Argument completion is available for these subcommands:
 
 | Command | Behavior |
 | --- | --- |
-| `/fastcrw` or `/fastcrw status` | Resolved URL, key presence (never its value), `/health`, `/ready`, refreshed capability version and LLM summary. |
+| `/fastcrw` or `/fastcrw status` | Resolved URL, key presence (never its value), hosted-monitor configuration, `/health`, `/ready`, refreshed capability version and LLM summary. |
 | `/fastcrw tools` or `/fastcrw tools list` | Each tool's active/inactive state and approximate schema-token cost. |
 | `/fastcrw tools enable <name\|all>` | Activate selected native tools now and remove them from persisted `disabledTools`. |
 | `/fastcrw tools disable <name\|all>` | Deactivate selected tools now and persist their full names. |
@@ -137,7 +144,7 @@ Argument completion is available for these subcommands:
 | `/fastcrw reset breakers` | POST `/admin/breakers/reset`, **only after UI confirmation**. |
 | `/fastcrw reset preferences [host]` | POST `/admin/preferences/reset` for one host or all, **only after UI confirmation**. |
 
-Names may be full (`fastcrw_research`) or short (`research`). These controls preserve unrelated active tools and take effect at runtime, never during extension loading. Saved exclusions apply on session start/reload; otherwise all nine are active by default (pi's own tool filters still apply).
+Names may be full (`fastcrw_research`) or short (`research`). These controls preserve unrelated active tools and take effect at runtime, never during extension loading. Saved exclusions apply on session start/reload; otherwise all nine engine tools (plus `fastcrw_monitor` when configured) are active by default (pi's own tool filters still apply). `tools enable all` never adds an unconfigured monitor tool.
 
 Resets are refused without a confirmation-capable UI. There are no model-callable admin reset tools. Status/command output is also emitted in non-UI modes.
 
@@ -147,7 +154,7 @@ Every active direct tool adds its schema to model requests. `/fastcrw tools list
 
 ## Security model and output
 
-- **Credential pinning:** only environment/user config chooses the engine URL and bearer token. HTTP is restricted to loopback; requests use manual redirects. Job IDs are path-encoded and server cursor URLs are never fetched. Engine credentials are not target-page headers.
+- **Credential pinning:** only environment/user config chooses the engine URL and bearer token, and likewise the separate hosted-monitor URL and key. Each key goes only to its own origin. HTTP is restricted to loopback; requests use manual redirects. Job IDs are path-encoded and server cursor URLs are never fetched. Engine credentials are not target-page headers.
 - The engine is a trusted service: it receives requested URLs, selected PDF bytes, BYOK tokens and proxy configuration. Use an engine you control/trust. The extension runs with pi's OS permissions; it is not a sandbox or an SSRF policy for the engine.
 - Known engine/LLM keys, configured proxy credentials and sensitive target-header values are redacted before normalized results/errors/spills reach pi. This is best-effort literal redaction, not a detector for arbitrary secrets, transformed/encoded echoes or secrets embedded in screenshots. Never put credentials in prompts, page URLs or tool arguments; pi may log arguments before execution.
 - Text is bounded to pi's 2000-line / 50-KB limits, with room reserved for a spill notice and closing untrusted delimiter.
@@ -157,6 +164,42 @@ Every active direct tool adds its schema to model requests. `/fastcrw tools list
 - Target-page `headers` may reach browser subresources. Never pass engine credentials in them. Proxies and BYOK settings are config-only so models/untrusted page instructions cannot select credential targets or expose tokens in tool-call history. Extract deliberately never receives an LLM endpoint override.
 - Local writes: config updates are atomic same-directory rename writes at **0600**, preserving other config keys; baseline/lock/temp files are **0600**, the snapshots directory **0700**; JSON spills and screenshot PNGs are **0600** in a private **0700** temporary directory. Config parent directories created by the extension use **0700**. Existing config permissions are not changed on read—use `chmod 600` yourself.
 - TUI calls/results escape terminal controls (including CSI/OSC introducers). Collapsed results show counts/status; partial results show progress; expanded text is capped at 80 source lines. Image blocks are displayed by pi. JSON/RPC results stay independent of these renderers.
+
+## Hosted monitors (`fastcrw_monitor`)
+
+Scheduled monitors run only on the **hosted control plane** at `https://fastcrw.com/api`. The engine lives on a different host (`https://api.fastcrw.com`). Self-hosted engines have no `/v1/monitor` routes (404); for self-hosting, use `fastcrw_changes` with your own scheduler.
+
+> **Not verified against the live hosted API.** This tool follows the published fastCRW monitoring docs and is tested offline against a mock control plane only. Response shapes the docs leave open are shown as returned (wrapped and redacted), not guessed.
+
+**Enable it** by adding a control-plane key to `~/.pi/agent/fastcrw.json` (or `FASTCRW_CONFIG`), or by setting `FASTCRW_MONITOR_API_KEY`, then `/reload`:
+
+```json
+{ "monitor": { "apiKey": "your-fastcrw.com-key" } }
+```
+
+- **Registration:** pi does not allow runtime calls while the extension factory runs. The factory therefore reads the config file synchronously and registers `fastcrw_monitor` only if a monitor key is present. Without one the tool does not exist, so no `--tools` pattern, `defaultTools` or `/fastcrw tools enable all` can expose it. Each call still re-reads config, so a removed key fails with a clear error.
+- **Key:** the fastCRW docs use one `$CRW_API_KEY` in both engine and control-plane examples, but they never say the keys are interchangeable. The engine `apiKey` is therefore **never** reused. If your hosted engine key is the same account key, set it again as `monitor.apiKey`. The monitor key is sent only to the pinned monitor origin and the engine key only to the engine. Redirects are manual, and both keys are redacted everywhere.
+- **Base URL:** `monitor.url` / `FASTCRW_MONITOR_URL` default to `https://fastcrw.com/api`. The `/api` path is kept. HTTPS is required except on loopback.
+
+| Action | Fields | Route |
+| --- | --- | --- |
+| `create` | `name`, `schedule`, `targets` (required); `goal`; `advanced.{judgeEnabled, retentionDays, webhook, notification}` | `POST /v1/monitor` |
+| `list` | — | `GET /v1/monitor` |
+| `get` / `delete` | `id` | `GET` / `DELETE /v1/monitor/{id}` |
+| `update` | `id` + at least one create field (no defaults injected) | `PATCH /v1/monitor/{id}` |
+| `run` | `id` | `POST /v1/monitor/{id}/run` |
+| `checks` | `id`; `status` (`queued`, `running`, `completed`, `failed`, `partial`, `skipped_overlap`); `next` | `GET /v1/monitor/{id}/checks` |
+| `check` | `id`, `checkId`; `status` (`same`, `new`, `changed`, `removed`, `error`); `next` | `GET /v1/monitor/{id}/checks/{checkId}` |
+| `balance` | — | `GET /v1/account/balance` |
+
+- **Schedule:** `{cron}` or `{text}` (e.g. `every 30 minutes`, `daily at 9am`), not both; `timezone` is an IANA zone, sent as `UTC` on create when omitted. Intervals provably under 15 minutes (`every 5 minutes`, `*/5 * * * *`, `0,10 * * * *`) are rejected locally. The server validates everything else and returns the normalized cron.
+- **Targets:** 1–50. `scrape` needs `urls` (≤50 distinct across all targets). `crawl` needs `url`, with optional `maxPages` (server default 1000). `changeMode` `json`/`mixed` require `jsonSchema`. `scrapeOptions`/`crawlOptions` accept only a documented engine subset: main-content, JS/wait, selectors/tags, target headers, renderer, country; crawl also takes `maxDepth`. Formats, cache, and LLM fields are excluded because the monitor controls them.
+- **Goal/judge:** `goal` ≤2 KB turns on the hosted judge automatically. Set `advanced.judgeEnabled:false` to store a goal without judging.
+- **Notifications:** `advanced.webhook` `{url (HTTPS only), events, headers, metadata}`. `advanced.notification.email` `{enabled, recipients (≤25), includeDiffs}`; new recipients must confirm a double opt-in link.
+- **Webhook secrets:** the signing secret (`webhookSecret`, shown once on create), any other `*secret*`/`*signature*` fields, and webhook header values are **withheld**. They never appear in model text, `details` or spill files. View the secret on the fastcrw.com dashboard, or rotate it with `update` and a new `advanced.webhook`. In an interactive pi session (TUI/RPC) the `webhookSecret` from `create`/webhook rotation is shown **once to you** in a UI notification (not the model transcript), since fastCRW returns it only once; headless runs cannot show it, so rotate it later from an interactive session.
+- **Run:** asynchronous, consumes credits, and is never retried. An HTTP 409 means a check is already in flight; the error tells you to inspect `checks status=running`.
+- **Pagination:** `checks`/`check` return one server page. The docs call `next` an *opaque cursor* but do not say how to send it back. A link-shaped `next` (absolute URL, `/path?…` or `?…`) is followed only if it targets the same pinned origin and route. A bare token is reported, not guessed at.
+- **Output:** a short summary (id, status, next run, credits, summary counts, `next`), then the response wrapped as untrusted content, with check pages/diffs wrapped per page URL. The full redacted response is spilled as usual. `balance` and `list` are shown as returned, because the docs do not pin their shapes. Annotations: `destructiveHint:true`.
 
 ## Coexisting with the `crw` MCP server
 
@@ -168,7 +211,7 @@ Native tools overlap with the engine's MCP tools. If both are configured, remove
 
 ## Feature coverage vs fastCRW
 
-v1.0 status: **✅** implemented, **config** user-config-only setting, **—** deliberately unavailable/out of scope.
+v1.1 status: **✅** implemented, **config** user-config-only setting or conditional tool, **—** deliberately unavailable/out of scope.
 
 | fastCRW feature | pi-fastcrw | Notes |
 | --- | --- | --- |
@@ -201,7 +244,7 @@ v1.0 status: **✅** implemented, **config** user-config-only setting, **—** d
 | Paper search/metadata/abstract passages/related graph/GitHub README | ✅ | `fastcrw_research`; no full-paper passage claim |
 | Health/readiness/capabilities | ✅ | `/fastcrw status`; lazy 10-minute cache for tools |
 | Renderer metrics and admin resets | ✅ | Commands only; resets require UI confirmation |
-| Hosted scheduled monitors/billing/webhook delivery | — | Hosted control plane, not the self-host engine |
+| Hosted scheduled monitors, checks, webhook/email config, balance | config | `fastcrw_monitor`, registered only with `monitor.apiKey`; offline-tested, **not verified against the live hosted API** |
 | Compatibility aliases, MCP transport, crw-browse/CDP | — | REST-native extension; no duplicate transports |
 
 ## Testing
@@ -212,12 +255,13 @@ npm run check                 # strict type-check: index.ts, test.mts, smoke.mts
 npm test                      # offline, real SDK + local mock engine; no credentials required
 npm run smoke                 # live, uses your user config; makes real engine requests
 npm run smoke -- --abort-only # opt-in: one 20-page Wikipedia crawl, abort after ~3 seconds
+npm run smoke -- --monitor    # opt-in: read-only hosted monitor checks; prints SKIP without monitor config
 npm pack --dry-run            # inspect only; does not publish
 ```
 
-The offline suite creates an isolated HOME, `FASTCRW_CONFIG` and `FASTCRW_HOME` before importing the SDK/extension. It uses an in-memory session/settings and a loopback `http.createServer`; a fetch guard rejects external requests. It never reads your real config or snapshots. It covers config precedence/validation, schemas, credential pinning/redirects/redaction, body mapping, jobs/progress/timeouts/cancellation, private spills/baselines, multipart PDF validation, research, capabilities, tool activation, admin guards and renderer safety. It normally finishes well under 30 seconds. CI runs only offline checks on Node 22 and 24; it never runs live smoke or publishes.
+The offline suite creates an isolated HOME, `FASTCRW_CONFIG` and `FASTCRW_HOME` before importing the SDK/extension. It uses an in-memory session/settings and a loopback `http.createServer`; a fetch guard rejects external requests. It never reads your real config or snapshots. A second loopback server mocks the hosted control plane under `/api`. Monitor scenarios load the extension into extra sessions. They cover absence without config, every action's route/method/body/id encoding, key-origin isolation, webhook-secret withholding, 409 handling and validation. It also covers config precedence/validation, schemas, credential pinning/redirects/redaction, body mapping, jobs/progress/timeouts/cancellation, private spills/baselines, multipart PDF validation, research, capabilities, tool activation, admin guards and renderer safety. It normally finishes well under 30 seconds. CI runs only offline checks on Node 22 and 24; it never runs live smoke or publishes.
 
-Live smoke tests exercise all nine schemas (no `anyOf`/`oneOf`/`const`), source/category/summarize search, scrape chunking/cache/rendering/evidence, map filters, crawl paging/errors/active, two-URL batch start/status/errors/cancel, schema+basis extraction, persistent changes/list/forget and stateless single/batch diff, a generated local PDF, and all four research actions. Snapshot tests use a unique tag, verify permissions, and forget it in `finally`. Page requests use only example.com, en.wikipedia.org, and pi.dev, with small limits. **No live admin resets.**
+Live smoke tests exercise all nine schemas (no `anyOf`/`oneOf`/`const`), source/category/summarize search, scrape chunking/cache/rendering/evidence, map filters, crawl paging/errors/active, two-URL batch start/status/errors/cancel, schema+basis extraction, persistent changes/list/forget and stateless single/batch diff, a generated local PDF, and all four research actions. Snapshot tests use a unique tag, verify permissions, and forget it in `finally`. Page requests use only example.com, en.wikipedia.org, and pi.dev, with small limits. **No live admin resets.** Normal smoke also checks that `fastcrw_monitor` is present exactly when a monitor key is configured. `--monitor` runs only `balance`, `list`, and `get`/`checks` on the first listed monitor. It never creates, updates, deletes or runs monitors.
 
 `smoke` prints `PASS`, `FAIL` (unexpected result/extension bug), or `SERVER` (HTTP 503/504, `search_degraded`, unavailable engine synthesis, or HTTP 422 `pdf_parse_failed`). Search outages/incomplete synthesis are retried once after 20 seconds; SERVER lines do not count as failures. Successful PDF parsing requires the generated text to be returned, not just an HTTP-200 envelope. Missing requested result summaries are reported as partial errors rather than silently passing.
 
@@ -253,6 +297,7 @@ Manual checks inside pi:
 | Timeout / job still running | Individual HTTP requests are capped at 290 seconds. `waitSeconds` is an inline budget, not a remote job deadline. Resume with `action:status` + `jobId`, or explicitly cancel it. Map native timeouts above 280 seconds are clamped. User abort after acceptance attempts cancellation independently. |
 | `summarizeResults` returns no summaries for news | This engine summarizes web results only. Use web sources or scrape the news URLs with summary format. Missing requested summaries are surfaced, not silently discarded. |
 | Capability limit / renderer error | Reduce the named limit or select `auto`/an advertised renderer. Capabilities are cached for 10 minutes; `/fastcrw status` refreshes them. Discovery failure alone does not block a call. |
+| `fastcrw_monitor` missing | Set `monitor.apiKey` or `FASTCRW_MONITOR_API_KEY`, then `/reload`; `/fastcrw status` shows whether the control plane is configured. |
 | Tool missing | Check `/fastcrw tools list`, persisted `disabledTools`, pi `--tools`/`--exclude-tools`, and `/reload`. Enable with `/fastcrw tools enable <name>`. |
 | Bad config | Confirm valid JSON with an object root, and `disabledTools` as an array of strings. Inspect `FASTCRW_CONFIG` if a different path is being read. |
 | Snapshot busy | Another writer may be using the same URL/tag. Retry or inspect the `.lock`; remove it only after verifying no writer is active. Use unique tags for independent baselines. |
