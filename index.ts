@@ -208,6 +208,8 @@ function validateHeaders(value: unknown) {
     if (/\r|\n/.test(key + str(v))) throw new Error("Target headers must not contain CR/LF.");
 }
 function validateChunk(body: Obj) {
+  // The engine ignores query/topK without a chunkStrategy; default to sentence chunking.
+  if (!body.chunkStrategy && (body.query !== undefined || body.topK !== undefined)) body.chunkStrategy = { type: "sentence" };
   if (!body.chunkStrategy) return;
   const c = pick(body.chunkStrategy, ["type", "maxChars", "overlapChars", "dedupe", "pattern"]);
   if (c.type === "regex" && !str(c.pattern).trim()) throw new Error("Regex chunkStrategy requires pattern.");

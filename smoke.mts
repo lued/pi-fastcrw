@@ -77,6 +77,7 @@ try {
   await run("fastcrw_scrape", { url: wiki, includeTags: ["h1"], excludeTags: ["nav"] }, has("Hello World"), "include/excludeTags");
   await run("fastcrw_scrape", { url: example, renderJs: true, waitFor: 100, headers: { "Accept-Language": "en" } }, has("Example Domain"), "renderJs + waitFor + headers");
   await run("fastcrw_scrape", { url: example, query: "example domain", topK: 1, chunkStrategy: { type: "sentence", maxChars: 100, overlapChars: 10, dedupe: true }, filterMode: "bm25" }, has("Relevant chunks (1)"), "query/topK/chunkStrategy/filterMode");
+  await run("fastcrw_scrape", { url: "https://en.wikipedia.org/wiki/Web_crawler", query: "politeness policy", topK: 2 }, has("Relevant chunks (2)"), "query/topK without chunkStrategy");
   await run("fastcrw_scrape", { url: example, maxAge: 0, storeInCache: false }, has("Example Domain"), "maxAge/storeInCache");
   await run("fastcrw_scrape", { url: example, advanced: { country: "us", renderer: "impersonated-http", stealth: true, deadlineMs: 15000, parsers: [] } }, has("Example Domain"), "advanced country/renderer/stealth/deadline/parsers");
   await run("fastcrw_map", { url: example, limit: 5, search: "EXAMPLE", includePaths: ["example.com"], excludePaths: ["not-present"], crawlFallback: true,
