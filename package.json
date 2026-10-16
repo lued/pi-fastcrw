@@ -1,9 +1,9 @@
 {
   "name": "pi-fastcrw",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "license": "MIT",
-  "description": "Lean pi extension for fastCRW web search, scraping and extraction",
+  "description": "Nine native pi tools for fastCRW search, scraping, jobs, changes, PDF parsing and research",
   "keywords": ["pi-package", "pi", "pi-extension", "fastcrw", "web-scraping"],
   "pi": { "extensions": ["./index.ts"] },
   "files": ["index.ts", "README.md"],
