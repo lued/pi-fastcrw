@@ -64,7 +64,8 @@ async function request(method: string, path: string, body?: Obj, signal?: AbortS
         (response.status === 401 ? "; set CRW_API_KEY for this server." : ""));
     }
     if (!response.ok || data.success === false) {
-      const message = [data.errorCode, data.error ?? data.message].filter(v => v !== undefined)
+      const warnings = data.warnings ?? obj(data.data).warnings;
+      const message = [data.errorCode, data.error ?? data.message, warnings && `warnings ${json(warnings)}`].filter(Boolean)
         .map(v => typeof v === "string" ? v : json(v)).join(": ");
       throw new Error(`fastCRW HTTP ${response.status}: ${message.slice(0, 700) || response.statusText}` +
         (response.status === 401 ? "; set CRW_API_KEY for this server." : ""));

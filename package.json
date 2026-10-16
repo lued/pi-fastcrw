@@ -9,7 +9,8 @@
   "files": ["index.ts", "README.md"],
   "engines": { "node": ">=22" },
   "scripts": {
-    "check": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext index.ts"
+    "check": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext index.ts",
+    "smoke": "node smoke.mts"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
