@@ -1,30 +1,56 @@
 # pi-fastcrw
 
-Nine native [pi](https://pi.dev) tools for a self-hosted fastCRW / `crw` web engine (REST API, v0.37.x), plus an optional tenth for hosted monitors. They cover search, scrape, map, crawl, batch, extract, changes, local PDF parsing, and research. **v1.1** adds `fastcrw_monitor` for the hosted fastcrw.com control plane; it is registered only when you configure it ([Hosted monitors](#hosted-monitors-fastcrw_monitor)). Everything lives in a single extension file: `index.ts`.
+Native [pi](https://pi.dev) tools for a fastCRW / `crw` web engine (REST API, v0.37.x). Nine tools cover search, scrape, map, crawl, batch, extract, changes, local PDF parsing and research; `v1.1` adds an optional tenth tool for hosted monitors on fastcrw.com, registered only when you configure it ([Hosted monitors](#hosted-monitors-fastcrw_monitor)). Everything lives in one extension file, `index.ts`, and ships as TypeScript source: no build step, no MCP server, no separate service.
+
+| | |
+| --- | --- |
+| Package | `pi-fastcrw` on npm, installable with `pi install npm:pi-fastcrw` |
+| Requires | pi **1.3.0+** and Node **22.19+**; a running fastCRW engine URL and token |
+| Config | one user-scoped file, `~/.pi/agent/fastcrw.json`, mode `0600` |
+| Optional | hosted monitors (extra key for `https://fastcrw.com/api`) |
+| Network | only the engine you configure; the control plane only if you enable monitors. No telemetry, no phoning home |
+| License | MIT |
 
 ## Install
 
 ```bash
-pi install npm:pi-fastcrw       # from npm
-pi install ./path/to/pi-fastcrw # local checkout
-pi -e ./index.ts               # try without installing
+pi install npm:pi-fastcrw        # latest release from npm (pi 1.3.0+)
+pi install npm:pi-fastcrw@1.1.0  # pin exactly this release
+pi install ./path/to/pi-fastcrw  # local checkout or tarball
+pi -e ./index.ts                # try once without installing
 ```
 
-Requires Node **22.19+** and pi (tested with pi 1.3.0). The package ships TypeScript source; no build step or separate MCP server is needed.
+After installing, `pi list` shows the package, `pi remove npm:pi-fastcrw` removes it, and `pi update --extensions` reconciles it. Type `/fastcrw status` inside pi to confirm the extension loaded and see what it resolved from config.
+
+### Supported versions
+
+| Component | Supported |
+| --- | --- |
+| pi | **1.3.0 and 1.4.0** (loaded and executed through the real pi extension runtime in both). Older 1.x has no such record. |
+| Node.js | **22.19+**. CI runs 22 and 24; the release was also exercised on 26. |
+| fastCRW engine | REST API **v0.37.x** (the version this release was written against). Newer engine versions are expected to work but are not tested. |
+| Hosted control plane | `https://fastcrw.com/api`. `fastcrw_monitor` is **not verified against the live hosted API** — see [Hosted monitors](#hosted-monitors-fastcrw_monitor). |
+
+The four `peerDependencies` (`@earendil-works/pi-*`, `typebox`) are host packages that pi itself supplies to extensions. Pi's package authoring contract (`docs/packages.md`) requires them to be declared with a `"*"` range and never bundled, which is what this package does; the exact versions actually exercised are pinned in `devDependencies`.
 
 ## Quick start
 
-Create `~/.pi/agent/fastcrw.json` with your engine URL and token:
+You need a fastCRW engine already running somewhere and the token it accepts. Then:
 
-```json
-{
-  "apiUrl": "https://search.example.com",
-  "apiKey": "your-engine-token"
-}
-```
+1. Create `~/.pi/agent/fastcrw.json` with your engine URL and token:
 
-Run `chmod 600 ~/.pi/agent/fastcrw.json`, start pi, then enter `/fastcrw status`.
-Ask: “Use fastcrw_search to find two pages about web crawlers.” An engine with its own LLM needs no additional LLM configuration.
+   ```json
+   {
+     "apiUrl": "https://search.example.com",
+     "apiKey": "your-engine-token"
+   }
+   ```
+
+2. Restrict it to your user: `chmod 600 ~/.pi/agent/fastcrw.json`.
+3. Start pi and type `/fastcrw status`. It prints the resolved engine URL, whether the key and BYOK key are set, the hosted-monitor state, then `/health`, `/ready` and the engine's capability summary. `/fastcrw tools list` shows the tool activation state and per-tool schema-token estimates; the command's argument completions list every other subcommand (`snapshots`, `metrics`, `reset …`).
+4. Ask: “Use fastcrw_search to find two pages about web crawlers.”
+
+That is the whole setup. An engine with its own LLM needs no additional LLM configuration; `llm` and `proxy` blocks are only for BYOK and proxy overrides. With no config file and no environment variable the tools still register and fall back to `http://localhost:3000` without a key, so nothing is inferred from anywhere else; capability-related failures then name the setting to add, for example `No server LLM key configured; configure the engine LLM or llm.apiKey in ~/.pi/agent/fastcrw.json.`
 
 ## Configuration
 
