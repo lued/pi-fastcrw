@@ -10,7 +10,7 @@
   "homepage": "https://github.com/lued/pi-fastcrw#readme",
   "bugs": { "url": "https://github.com/lued/pi-fastcrw/issues" },
   "publishConfig": { "access": "public" },
-  "pi": { "extensions": ["./index.ts"] },
+  "pi": { "image": "https://raw.githubusercontent.com/lued/pi-fastcrw/main/docs/images/session.png", "extensions": ["./index.ts"] },
   "files": ["index.ts", "README.md", "docs", "LICENSE", "CHANGELOG.md"],
   "engines": { "node": ">=22.19" },
   "scripts": {

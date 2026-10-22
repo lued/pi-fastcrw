@@ -9,6 +9,10 @@ Documentation only; no runtime change.
 - README is now a landing page: tagline, working install commands, a three-command quick start, the tool and command tables, a security summary and a documentation index. It is 125 lines instead of 337.
 - The reference material moved unchanged into `docs/`: `configuration.md`, `tools.md`, `commands.md`, `security.md`, `monitoring.md`, `coverage.md`, `testing.md`, `compatibility.md`. `package.json` publishes `docs/` so the links resolve in the tarball.
 - Install section corrected: `pi install npm:pi-fastcrw` returned npm 404 on 2026-10-22, so the README now leads with the pinned git tag and local checkout and states npm publication as pending. Nothing has been published to npm, despite the 1.1.0 heading below.
+- First real product image: `docs/images/session.png`, a pty capture of a live pi session calling
+  `fastcrw_search` and `fastcrw_scrape` against a running engine (amber-oled theme, collapsed tool
+  cards). The README embeds it by absolute URL so it renders on GitHub, npm and the gallery, and
+  `pi.image` in the manifest points the package gallery at the same file.
 
 ## 1.1.0 — 2026-10-21
 

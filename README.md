@@ -2,6 +2,8 @@
 
 Native [pi](https://pi.dev) tools for a [fastCRW](https://fastcrw.com) (`crw`) engine: search, scrape, map, crawl, batch, extract, change tracking, PDF parsing and research, plus an optional hosted-monitor tool. One TypeScript extension, `index.ts` — no build step, no MCP server, no second service.
 
+![A pi session using fastcrw_search and fastcrw_scrape; results stay collapsed until expanded](https://raw.githubusercontent.com/lued/pi-fastcrw/main/docs/images/session.png)
+
 ```bash
 pi install git:github.com/lued/pi-fastcrw@v1.1.0   # pinned release
 ```
