@@ -31,6 +31,6 @@
     "@earendil-works/pi-tui": "1.3.0",
     "typebox": "1.3.27",
     "@types/node": "22.19.19",
-    "typescript": "5.9.3"
+    "typescript": "7.0.2"
   }
 }
