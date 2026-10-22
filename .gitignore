@@ -1,2 +1,14 @@
 node_modules
 *.tgz
+
+# Local environment and key material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Editor and OS droppings
+.DS_Store
+.idea/

@@ -11,12 +11,13 @@
   "bugs": { "url": "https://github.com/lued/pi-fastcrw/issues" },
   "publishConfig": { "access": "public" },
   "pi": { "image": "https://raw.githubusercontent.com/lued/pi-fastcrw/main/docs/images/session.png", "extensions": ["./index.ts"] },
-  "files": ["index.ts", "README.md", "docs", "LICENSE", "CHANGELOG.md"],
+  "files": ["index.ts", "README.md", "docs", "SECURITY.md", "LICENSE", "CHANGELOG.md"],
   "engines": { "node": ">=22.19" },
   "scripts": {
     "check": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext index.ts test.mts smoke.mts",
     "test": "node --test test.mts",
-    "smoke": "node smoke.mts"
+    "smoke": "node smoke.mts",
+    "check:secrets": "node scripts/check-secrets.mjs"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

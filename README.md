@@ -108,7 +108,7 @@ Every active direct tool adds its schema to model requests; use `/fastcrw tools 
 - Complete redacted responses are spilled to private `0600` files in a `0700` temp directory; snapshot baselines are `0600` in a `0700` directory. Permissions are not encryption.
 - The engine is a trusted service: it receives requested URLs, selected PDF bytes, BYOK tokens and proxy settings. The extension is not a sandbox for it.
 
-Threat model, redaction limits and every local write: [Security model](https://github.com/lued/pi-fastcrw/blob/main/docs/security.md). Running monitors: [Hosted monitors](https://github.com/lued/pi-fastcrw/blob/main/docs/monitoring.md). Coexisting with the `crw` MCP server and the full feature matrix: [Coverage](https://github.com/lued/pi-fastcrw/blob/main/docs/coverage.md).
+Threat model, redaction limits and every local write: [Security model](https://github.com/lued/pi-fastcrw/blob/main/docs/security.md). Reporting a vulnerability: [SECURITY.md](https://github.com/lued/pi-fastcrw/blob/main/SECURITY.md). Running monitors: [Hosted monitors](https://github.com/lued/pi-fastcrw/blob/main/docs/monitoring.md). Coexisting with the `crw` MCP server and the full feature matrix: [Coverage](https://github.com/lued/pi-fastcrw/blob/main/docs/coverage.md).
 
 ## Development
 
@@ -116,11 +116,12 @@ Threat model, redaction limits and every local write: [Security model](https://g
 npm ci
 npm run check                 # strict type-check: index.ts, test.mts, smoke.mts
 npm test                      # offline: real SDK + local mock engine, no credentials
+npm run check:secrets         # fail on credential shapes or private home paths
 npm run smoke                 # live: uses your user config, real engine requests
 npm pack --dry-run            # inspect the published file list
 ```
 
-Implementation stays in `index.ts`; offline tests in `test.mts`, live tests in `smoke.mts`. pi loads TypeScript directly, so there is no build step. Test coverage, live-smoke scope, manual in-pi checks and troubleshooting live in [Testing](https://github.com/lued/pi-fastcrw/blob/main/docs/testing.md).
+Implementation stays in `index.ts`; offline tests in `test.mts`, live tests in `smoke.mts`. pi loads TypeScript directly, so there is no build step. Test coverage, live-smoke scope, manual in-pi checks and troubleshooting live in [Testing](https://github.com/lued/pi-fastcrw/blob/main/docs/testing.md). Repository and release security defaults are in [Release checklist](https://github.com/lued/pi-fastcrw/blob/main/docs/release-checklist.md).
 
 ## License
 

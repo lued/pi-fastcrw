@@ -1,0 +1,16 @@
+# Weekly update PRs for the pinned actions and the development dependencies.
+# Runtime peer ranges stay `*` on purpose (pi supplies those packages), so only
+# devDependencies move.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    versioning-strategy: auto
+    allow:
+      - dependency-type: development
