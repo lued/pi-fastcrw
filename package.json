@@ -11,7 +11,7 @@
   "bugs": { "url": "https://github.com/lued/pi-fastcrw/issues" },
   "publishConfig": { "access": "public" },
   "pi": { "extensions": ["./index.ts"] },
-  "files": ["index.ts", "README.md", "LICENSE", "CHANGELOG.md"],
+  "files": ["index.ts", "README.md", "docs", "LICENSE", "CHANGELOG.md"],
   "engines": { "node": ">=22.19" },
   "scripts": {
     "check": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext index.ts test.mts smoke.mts",

@@ -1,0 +1,14 @@
+# Security model and output
+
+Credential pinning, redaction limits, spills, file permissions and TUI escaping.
+
+- **Credential pinning:** only environment/user config chooses the engine URL and bearer token, and likewise the separate hosted-monitor URL and key. Each key goes only to its own origin. HTTP is restricted to loopback; requests use manual redirects. Job IDs are path-encoded and server cursor URLs are never fetched. Engine credentials are not target-page headers.
+- The engine is a trusted service: it receives requested URLs, selected PDF bytes, BYOK tokens and proxy configuration. Use an engine you control/trust. The extension runs with pi's OS permissions; it is not a sandbox or an SSRF policy for the engine.
+- Known engine/LLM keys, configured proxy credentials and sensitive target-header values are redacted before normalized results/errors/spills reach pi. This is best-effort literal redaction, not a detector for arbitrary secrets, transformed/encoded echoes or secrets embedded in screenshots. Never put credentials in prompts, page URLs or tool arguments; pi may log arguments before execution.
+- Text is bounded to pi's 2000-line / 50-KB limits, with room reserved for a spill notice and closing untrusted delimiter.
+- Complete redacted JSON responses are saved to private 0600 files in a 0700 `pi-fastcrw-*` temp directory, including filtered-out map links. `details.fullResponse` and the text show a readable path. Screenshot PNGs also have a readable path and are attached as images.
+- Spills are retained for later `read`; clean them up when no longer needed. Snapshot baselines persist separately until forgotten. Both may contain sensitive page/document content; permissions are not encryption.
+- Fetched page, paper, README, answer and diff text is wrapped in `<untrusted-web-content>` tags. Treat it as evidence, not instructions.
+- Target-page `headers` may reach browser subresources. Never pass engine credentials in them. Proxies and BYOK settings are config-only so models/untrusted page instructions cannot select credential targets or expose tokens in tool-call history. Extract deliberately never receives an LLM endpoint override.
+- Local writes: config updates are atomic same-directory rename writes at **0600**, preserving other config keys; baseline/lock/temp files are **0600**, the snapshots directory **0700**; JSON spills and screenshot PNGs are **0600** in a private **0700** temporary directory. Config parent directories created by the extension use **0700**. Existing config permissions are not changed on read—use `chmod 600` yourself.
+- TUI calls/results escape terminal controls (including CSI/OSC introducers). Collapsed results show counts/status; partial results show progress; expanded text is capped at 80 source lines. Image blocks are displayed by pi. JSON/RPC results stay independent of these renderers.
